@@ -48,7 +48,7 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
         num = []
         random_sd = np.random.randint(0,high=25)
         parent.uniqueID = idcount
-        parent.encoder.load_state_dict(torch.load('Official_nopad/encoder'+str(random_sd)+'_best'))
+        parent.encoder.load_state_dict(torch.load('Pretrained/encoder'+str(random_sd)+'_best'))
         idcount += 1
         with torch.no_grad():
             loader = DataLoader(data, shuffle=True, pin_memory=True,
