@@ -6,7 +6,7 @@ The error was with how the tokenized target was fed into the model during traini
 
 At present, the pretrained models are overfitting during training, leading to models that are unable to predict valid equations. For dual-objective optimization, the initial pretraining is necessary to produce equations that are valid (can be evaluated on X values to produce Y-hat values) in order to improve network performance both symbolically and numerically.
 
-To run, first 25 models pretrained with backpropagation need to be generated.  This allows for a pool of individuals for the initial parent population to be chosen from randomly. To do so, run the following 25 times with a different unique ID (last number) from 0-24 each time. When done, there should be 25 saved models in the pretrain/Pretrained folder, encoder0_best - encoder24_best:
+To run, first 25 models pretrained with backpropagation need to be generated.  This allows for a pool of individuals for the initial parent population to be chosen from randomly. To do so, run the following 25 times with a different unique ID from 0-24 each time. Per the manuscript, initial models are pretrained for 25 epochs (set numEpochs to 25). When done, there should be 25 saved models in the pretrain/Pretrained folder, encoder0_best - encoder24_best:
 
 ```
 python pretrain/run_srkit.py numEpochs uniqueID
