@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
 from indiv_srkit import Individual
 from srkit.srkit.primitives import primitives, Primitive
-from srkit.srkit.expressions import Expression
+from srkit.srkit.expressions_eqn import Expression
 from selection import survivor_selection
 
 
@@ -24,19 +24,6 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
     gen_at_multi = 9999
     idcount = 0
 
-    #set up primitives and expressions for future evaluation
-    prim_sin = Primitive(torch.sin, "sin", arity=1)
-    prim_cos = Primitive(torch.cos, "cos", arity=1)
-    prim_exp = Primitive(torch.exp, "exp", arity=1)  # WARN
-    prim_log = Primitive(torch.log, "log", arity=1)  # WARN
-    prim_sqrt = Primitive(torch.sqrt, "sqrt", arity=1)
-    prim_add = Primitive(torch.add, "add", arity=2)
-    prim_mul = Primitive(torch.multiply, "mul", arity=2)
-    prim_pow = Primitive(torch.pow, 'pow', arity=2)
-    prim_x1 = Primitive(None, 'x1', arity=0)
-    prim_2 = Primitive(lambda: 2, '2', arity=0)  # power 2
-    prim_3 = Primitive(lambda: 3, '3', arity=0)  # power 3
-    prim_4 = Primitive(lambda: 4, '4', arity=0)  # power 4
 
     # print("generating parents", flush=True)
     parents = []
@@ -46,19 +33,19 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
     for parent in parents:
         sym = []
         num = []
-        random_sd = np.random.randint(0,high=25)
         parent.uniqueID = idcount
-        parent.encoder.load_state_dict(torch.load('pretrain/Pretrained/encoder'+str(random_sd)+'_best'))
+        parent.encoder.load_state_dict(torch.load('50fixed/encoder'+str(idcount)))
         idcount += 1
         with torch.no_grad():
             loader = DataLoader(data, shuffle=True, pin_memory=True,
                                 batch_size=batch_size)
 
-            for it, (p, e) in enumerate(loader):
+            for it, (p, e0, e1) in enumerate(loader):
                 p = p.to(device)  # points
-                e = e.to(device)  # eq array
+                e0 = e0.to(device)  # input
+                e1 = e1.to(device)  # target
 
-                logits, loss, indiv_loss = parent.encoder(e, p, tokenizer=data.itos)
+                logits, loss = parent.encoder(e0, e1, p, tokenizer=data.itos)
                 mean_loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
                 sym.append(mean_loss.item())
 
@@ -68,11 +55,24 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
                 for z in range(logits.size()[0]):
                     eqn = torch.argmax(logits[z], dim=1)
                     eqn_list = eqn.tolist()
-                    clean_eq_list = [i for i in eqn_list if i != data.paddingID]
+                    particular_value = data.endID
+                    result = []
+                    temp_list = []
+                    for op in eqn_list:
+                        if op == particular_value:
+                            temp_list.append(op)
+                            result.append(temp_list)
+                            temp_list = []
+                        else:
+                            temp_list.append(op)
+                    result.append(temp_list)
+                    eqn_list = result[0]
+                    eqn_list = [m for l, m in enumerate(eqn_list) if m != data.startID]
+                    clean_eq_list = [m for l, m in enumerate(eqn_list) if m != data.startID]
                     expression = Expression([data.itos[n] for n in clean_eq_list])
 
                     try:
-                        yhats = expression.execute(p[z][0])
+                        yhats, eqn_pred = expression.execute(p[z][0])
                         errors.append(criterion(yhats, p[z][1]).cpu().numpy())
                         # print(criterion(yhats, p[z][1]))
                         # print(yhats)
@@ -138,11 +138,12 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
                 loader = DataLoader(data, shuffle=True, pin_memory=True,
                                     batch_size=batch_size)
 
-                for it, (p, e) in enumerate(loader):
+                for it, (p, e0, e1) in enumerate(loader):
                     p = p.to(device)  # points
-                    e = e.to(device)  # eq array
+                    e0 = e0.to(device)  # input
+                    e1 = e1.to(device)  # target
 
-                    logits, loss, indiv_loss = child.encoder(e, p, tokenizer=data.itos)
+                    logits, loss = parent.encoder(e0, e1, p, tokenizer=data.itos)
                     mean_loss = loss.mean()  # collapse all losses if they are scattered on multiple gpus
                     sym.append(mean_loss.item())
 
@@ -152,11 +153,24 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
                     for z in range(logits.size()[0]):
                         eqn = torch.argmax(logits[z], dim=1)
                         eqn_list = eqn.tolist()
-                        clean_eq_list = [i for i in eqn_list if i != data.paddingID]
+                        particular_value = data.endID
+                        result = []
+                        temp_list = []
+                        for op in eqn_list:
+                            if op == particular_value:
+                                temp_list.append(op)
+                                result.append(temp_list)
+                                temp_list = []
+                            else:
+                                temp_list.append(op)
+                        result.append(temp_list)
+                        eqn_list = result[0]
+                        eqn_list = [m for l, m in enumerate(eqn_list) if m != data.startID]
+                        clean_eq_list = [m for l, m in enumerate(eqn_list) if m != data.startID]
                         expression = Expression([data.itos[n] for n in clean_eq_list])
 
                         try:
-                            yhats = expression.execute(p[z][0])
+                            yhats, eqn_pred = expression.execute(p[z][0])
                             errors.append(criterion(yhats, p[z][1]).cpu().numpy())
                             # print(criterion(yhats, p[z][1]))
                             # print(yhats)
@@ -169,7 +183,6 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
                                 errors[k] = np.inf
 
                     # print(errors)
-                    num.append(np.mean(errors))
                     num.append(np.mean(errors))
             child.num_fitness = np.mean(num)
             child.sym_fitness = np.mean(sym)
@@ -198,7 +211,7 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
         else:
             print("Used Multi")
             parents = survivor_selection(population, num_parents)
-            if gen_at_multi > gen:
+            if gen_at_multi < gen:
                 gen_at_multi = gen
 
         #saving fitness over time
