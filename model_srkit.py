@@ -133,6 +133,7 @@ class tNet(nn.Module):
 
         self.activation_func = F.relu
         self.num_units = config.embeddingSize
+        self.config = config
 
         self.conv1 = nn.Conv1d(config.numberofVars + config.numberofYs, self.num_units, 1)
         self.conv2 = nn.Conv1d(self.num_units, 2 * self.num_units, 1)
@@ -157,16 +158,19 @@ class tNet(nn.Module):
         :return:
             logit: [batch, embedding_size]
         """
-        # x = self.input_batch_norm(x)
-        x = self.activation_func(self.conv1(x))
-        x = self.activation_func(self.conv2(x))
-        x = self.activation_func(self.conv3(x))
+        # print("size of input batch norm", self.config.numberofVars+self.config.numberofYs)
+        # print(x.shape)
+        # print(self.input_batch_norm)
+        x = self.input_batch_norm(x)
+        x = self.activation_func(self.bn1(self.conv1(x)))
+        x = self.activation_func(self.bn2(self.conv2(x)))
+        x = self.activation_func(self.bn3(self.conv3(x)))
         x, _ = torch.max(x, dim=2)  # global max pooling
         assert x.size(1) == 4 * self.num_units
 
-        x = self.activation_func(self.fc1(x))
-        x = self.activation_func(self.fc2(x))
-        # x = self.fc2(x)
+        x = self.activation_func(self.bn4(self.fc1(x)))
+        x = self.activation_func(self.bn5(self.fc2(x)))
+        #x = self.fc2(x)
 
         return x
 
@@ -270,36 +274,32 @@ class GPT(nn.Module):
         optimizer = torch.optim.AdamW(optim_groups, lr=train_config.learning_rate, betas=train_config.betas)
         return optimizer
 
-    def forward(self, targets=None, points=None, tokenizer=None):
-        b, t = targets.size()
+    def forward(self, idx, targets=None, points=None, tokenizer=None):
+        b, t = idx.size()
         assert t <= self.block_size, "Cannot forward, model block size is exhausted."
 
         # forward the GPT model
-        token_embeddings = self.tok_emb(targets)  # each index maps to a (learnable) vector
+        token_embeddings = self.tok_emb(idx)  # each index maps to a (learnable) vector
         position_embeddings = self.pos_emb[:, :t, :]  # each position maps to a (learnable) vector
 
         if points != None and self.pointNet != None:
             points_embeddings = self.pointNet(points)
             points_embeddings = points_embeddings.unsqueeze(1)
             points_embeddings = torch.tile(points_embeddings, (1, token_embeddings.shape[1], 1))
+            input_embedding = token_embeddings + position_embeddings + points_embeddings
 
-            if self.pointNetConfig.method == 'EMB_SUM':
-                    # summation
-                input_embedding = token_embeddings + position_embeddings + points_embeddings
         else:
             input_embedding = token_embeddings + position_embeddings
 
         x = self.drop(input_embedding)
         x = self.blocks(x)
         x = self.ln_f(x)
-
         logits = self.head(x)
-        # if we are given some desired targets also calculate the loss
+
+            # if we are given some desired targets also calculate the loss
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1),
+                                   ignore_index=self.config.padding_idx)
 
-            indiv_loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), reduction='none')
-            # print(indiv_loss)
-
-        return logits, loss, indiv_loss
+        return logits, loss
