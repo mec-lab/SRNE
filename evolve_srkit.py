@@ -30,11 +30,12 @@ def evolve(mconf, pconf, data, device, generations=100, num_parents=100,
     while len(parents) < num_parents:
         parents.append(Individual(mconf, pconf, device))
     # print("start parent evaluation", flush=True)
+    base_model = np.random.choice(25, num_parents, replace=False)
     for parent in parents:
         sym = []
         num = []
         parent.uniqueID = idcount
-        parent.encoder.load_state_dict(torch.load('50fixed/encoder'+str(idcount)))
+        parent.encoder.load_state_dict(torch.load('pretrain/Pretrained/encoder'+str(base_model[idcount])+'_best'))
         idcount += 1
         with torch.no_grad():
             loader = DataLoader(data, shuffle=True, pin_memory=True,
